@@ -3,13 +3,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChat, Message } from '@/context/ChatContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Trash2, Send, Sparkles } from 'lucide-react';
+import { Trash2, Send, Sparkles, PlusCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import MessageBubble from './MessageBubble';
 import { cn } from '@/lib/utils';
 
 export default function ChatInterface() {
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const { messages, isLoading, sendMessage, clearChat, resetSession } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +30,11 @@ export default function ChatInterface() {
     
     await sendMessage(input);
     setInput('');
+  };
+  
+  const handleNewChat = () => {
+    resetSession();
+    inputRef.current?.focus();
   };
   
   const messageVariants = {
@@ -133,6 +138,18 @@ export default function ChatInterface() {
         transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 30 }}
       >
         <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleNewChat}
+            className="rounded-full flex-shrink-0"
+            title="New chat"
+          >
+            <PlusCircle size={18} />
+            <span className="sr-only">New chat</span>
+          </Button>
+
           {messages.length > 0 && (
             <Button
               type="button"

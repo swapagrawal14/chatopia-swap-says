@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { generateGeminiResponse } from '@/lib/gemini';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { v4 as uuidv4 } from 'uuid';
 
 export type Message = {
   id: string;
@@ -17,23 +18,45 @@ type ChatContextType = {
   isLoading: boolean;
   sendMessage: (content: string) => Promise<void>;
   clearChat: () => void;
+  sessionId: string;
+  resetSession: () => void;
 };
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
+
+// Function to get or create a session ID
+const getOrCreateSessionId = (): string => {
+  let sessionId = localStorage.getItem('chat_session_id');
+  if (!sessionId) {
+    sessionId = uuidv4();
+    localStorage.setItem('chat_session_id', sessionId);
+  }
+  return sessionId;
+};
 
 export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId());
   const { user } = useAuth();
 
-  // Load messages from Supabase on initial render or when user changes
+  // Function to reset session
+  const resetSession = () => {
+    const newSessionId = uuidv4();
+    localStorage.setItem('chat_session_id', newSessionId);
+    setSessionId(newSessionId);
+    setMessages([]);
+  };
+
+  // Load messages from Supabase on initial render or when user/session changes
   useEffect(() => {
     const fetchMessages = async () => {
       try {
         const { data, error } = await supabase
           .from('messages')
           .select('*')
+          .eq('session_id', sessionId)
           .order('created_at', { ascending: true });
         
         if (error) {
@@ -51,6 +74,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           }));
           
           setMessages(formattedMessages);
+        } else {
+          setMessages([]);
         }
       } catch (error) {
         console.error('Failed to fetch messages:', error);
@@ -61,7 +86,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
 
     fetchMessages();
 
-    // Subscribe to realtime messages
+    // Subscribe to realtime messages for the current session
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -69,7 +94,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         {
           event: '*',
           schema: 'public',
-          table: 'messages'
+          table: 'messages',
+          filter: `session_id=eq.${sessionId}`
         },
         (payload) => {
           console.log('Realtime update received:', payload);
@@ -95,7 +121,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, sessionId]);
 
   const saveMessageToSupabase = async (message: { content: string; role: 'user' | 'assistant' }) => {
     try {
@@ -105,7 +131,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           {
             content: message.content,
             role: message.role,
-            user_id: user?.id
+            user_id: user?.id,
+            session_id: sessionId
           }
         ])
         .select();
@@ -152,11 +179,11 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   
   const clearChat = async () => {
     try {
-      // Delete all messages from Supabase
+      // Delete all messages from the current session in Supabase
       const { error } = await supabase
         .from('messages')
         .delete()
-        .not('id', 'is', null);
+        .eq('session_id', sessionId);
         
       if (error) {
         console.error('Error clearing messages from Supabase:', error);
@@ -178,6 +205,8 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         isLoading,
         sendMessage,
         clearChat,
+        sessionId,
+        resetSession,
       }}
     >
       {children}
