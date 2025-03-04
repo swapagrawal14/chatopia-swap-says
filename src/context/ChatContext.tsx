@@ -2,6 +2,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateGeminiResponse } from '@/lib/gemini';
+import { supabase } from '@/integrations/supabase/client';
+import { v4 as uuidv4 } from 'uuid';
 
 export type Message = {
   id: string;
@@ -22,68 +24,149 @@ const ChatContext = createContext<ChatContextType | undefined>(undefined);
 export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load messages from localStorage on initial render
+  // Load messages from Supabase on initial render
   useEffect(() => {
-    const savedMessages = localStorage.getItem('swapSaysMessages');
-    if (savedMessages) {
+    const fetchMessages = async () => {
       try {
-        const parsedMessages = JSON.parse(savedMessages);
-        // Convert string timestamps back to Date objects
-        const messagesWithDateObjects = parsedMessages.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp)
-        }));
-        setMessages(messagesWithDateObjects);
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .order('created_at', { ascending: true });
+        
+        if (error) {
+          console.error('Error fetching messages:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          // Convert created_at timestamps to Date objects
+          const formattedMessages = data.map(msg => ({
+            id: msg.id,
+            content: msg.content,
+            role: msg.role as 'user' | 'assistant',
+            timestamp: new Date(msg.created_at)
+          }));
+          
+          setMessages(formattedMessages);
+        }
       } catch (error) {
-        console.error('Failed to parse saved messages:', error);
+        console.error('Failed to fetch messages:', error);
+      } finally {
+        setIsInitialized(true);
       }
-    }
+    };
+
+    fetchMessages();
+
+    // Subscribe to realtime messages
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages'
+        },
+        (payload) => {
+          console.log('Realtime update received:', payload);
+          if (payload.eventType === 'INSERT') {
+            const newMessage = payload.new;
+            setMessages(prev => {
+              // Check if we already have this message
+              if (prev.some(msg => msg.id === newMessage.id)) {
+                return prev;
+              }
+              return [...prev, {
+                id: newMessage.id,
+                content: newMessage.content,
+                role: newMessage.role,
+                timestamp: new Date(newMessage.created_at)
+              }];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // Save messages to localStorage whenever they change
-  useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem('swapSaysMessages', JSON.stringify(messages));
+  const saveMessageToSupabase = async (message: { content: string; role: 'user' | 'assistant' }) => {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert([
+          {
+            content: message.content,
+            role: message.role,
+          }
+        ])
+        .select();
+
+      if (error) {
+        console.error('Error saving message to Supabase:', error);
+        throw error;
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error('Failed to save message:', error);
+      throw error;
     }
-  }, [messages]);
+  };
 
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
     
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      role: 'user',
-      timestamp: new Date(),
-    };
-    
-    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     
     try {
+      // Save user message to Supabase
+      const savedUserMessage = await saveMessageToSupabase({
+        content,
+        role: 'user',
+      });
+      
+      // Generate AI response
       const response = await generateGeminiResponse(content);
       
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      // Save assistant message to Supabase
+      await saveMessageToSupabase({
         content: response,
         role: 'assistant',
-        timestamp: new Date(),
-      };
-      
-      setMessages((prev) => [...prev, assistantMessage]);
+      });
     } catch (error) {
-      console.error('Error generating response:', error);
-      toast.error('Failed to get a response. Please try again.');
+      console.error('Error in message flow:', error);
+      toast.error('Failed to send or receive message. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
   
-  const clearChat = () => {
-    setMessages([]);
-    localStorage.removeItem('swapSaysMessages');
-    toast.success('Chat history cleared');
+  const clearChat = async () => {
+    try {
+      // Delete all messages from Supabase
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .not('id', 'is', null);
+        
+      if (error) {
+        console.error('Error clearing messages from Supabase:', error);
+        throw error;
+      }
+      
+      setMessages([]);
+      toast.success('Chat history cleared');
+    } catch (error) {
+      console.error('Failed to clear chat history:', error);
+      toast.error('Failed to clear chat history. Please try again.');
+    }
   };
   
   return (
