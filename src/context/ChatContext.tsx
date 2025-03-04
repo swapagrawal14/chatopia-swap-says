@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateGeminiResponse } from '@/lib/gemini';
 import { supabase } from '@/integrations/supabase/client';
-import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from './AuthContext';
 
 export type Message = {
   id: string;
@@ -25,8 +25,9 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const { user } = useAuth();
 
-  // Load messages from Supabase on initial render
+  // Load messages from Supabase on initial render or when user changes
   useEffect(() => {
     const fetchMessages = async () => {
       try {
@@ -94,7 +95,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]);
 
   const saveMessageToSupabase = async (message: { content: string; role: 'user' | 'assistant' }) => {
     try {
@@ -104,6 +105,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           {
             content: message.content,
             role: message.role,
+            user_id: user?.id
           }
         ])
         .select();
