@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import BuyMeCoffeeButton from "./BuyMeCoffeeButton";
 
 export default function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -56,6 +57,8 @@ export default function Navbar() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
         >
+          <BuyMeCoffeeButton username="swapagrawal" />
+          
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
