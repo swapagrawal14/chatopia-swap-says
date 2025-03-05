@@ -3,14 +3,40 @@ import { Message } from '@/context/ChatContext';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { Bot, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 type MessageBubbleProps = {
   message: Message;
   isLastMessage: boolean;
 };
 
+// Format a date to display only time (hours:minutes:seconds)
+const formatMessageTime = (date: Date): string => {
+  return new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  }).format(date);
+};
+
 export default function MessageBubble({ message, isLastMessage }: MessageBubbleProps) {
   const isUser = message.role === 'user';
+  const [currentTime, setCurrentTime] = useState<string>(formatMessageTime(message.timestamp));
+  
+  // For real-time messages, update the current time every second
+  useEffect(() => {
+    // Only update if the message is from the last few minutes
+    const isRecent = (Date.now() - message.timestamp.getTime()) < 5 * 60 * 1000; // 5 minutes
+    
+    if (isRecent && isLastMessage) {
+      const timer = setInterval(() => {
+        setCurrentTime(formatMessageTime(message.timestamp));
+      }, 1000);
+      
+      return () => clearInterval(timer);
+    }
+  }, [message.timestamp, isLastMessage]);
   
   return (
     <motion.div
@@ -47,10 +73,7 @@ export default function MessageBubble({ message, isLastMessage }: MessageBubbleP
             "text-xs mt-1 opacity-70 text-right",
             isUser ? "text-primary-foreground" : "text-muted-foreground"
           )}>
-            {new Intl.DateTimeFormat('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(message.timestamp)}
+            {currentTime}
           </div>
         </div>
       </div>
