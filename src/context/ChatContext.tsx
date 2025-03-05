@@ -97,7 +97,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           table: 'messages',
           filter: `session_id=eq.${sessionId}`
         },
-        (payload) => {
+        (payload: any) => {
           console.log('Realtime update received:', payload);
           if (payload.eventType === 'INSERT') {
             const newMessage = payload.new;
