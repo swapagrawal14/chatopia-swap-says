@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateGeminiResponse } from '@/lib/gemini';
@@ -169,8 +170,23 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
         role: 'user',
       });
       
-      // Generate AI response
-      const response = await generateGeminiResponse(content);
+      // Get user's location if the message is asking about weather
+      let locationInfo = '';
+      if (content.toLowerCase().includes('weather')) {
+        try {
+          locationInfo = await getUserLocationInfo();
+        } catch (err) {
+          console.error('Failed to get location:', err);
+          locationInfo = 'Location information unavailable.';
+        }
+      }
+      
+      // Generate AI response with location context if relevant
+      const finalPrompt = locationInfo ? 
+        `${content}\n\nUser's location information: ${locationInfo}` : 
+        content;
+        
+      const response = await generateGeminiResponse(finalPrompt);
       
       // Save assistant message to Supabase
       await saveMessageToSupabase({
@@ -228,4 +244,51 @@ export const useChat = () => {
     throw new Error('useChat must be used within a ChatProvider');
   }
   return context;
+};
+
+// Helper function to get user's location information
+const getUserLocationInfo = (): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject('Geolocation is not supported by your browser');
+      return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Try to get city name using reverse geocoding
+          try {
+            const response = await fetch(
+              `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+            );
+            const data = await response.json();
+            
+            const locationDetails = [
+              data.city,
+              data.principalSubdivision,
+              data.countryName
+            ].filter(Boolean).join(', ');
+            
+            resolve(locationDetails || `Latitude: ${latitude}, Longitude: ${longitude}`);
+          } catch (error) {
+            // If geocoding fails, just return the coordinates
+            resolve(`Latitude: ${latitude}, Longitude: ${longitude}`);
+          }
+        } catch (error) {
+          reject('Error processing location data');
+        }
+      },
+      (error) => {
+        reject(`Error getting location: ${error.message}`);
+      },
+      { 
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0
+      }
+    );
+  });
 };
