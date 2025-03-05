@@ -35,27 +35,24 @@ type RealtimePayload = {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-// Function to get or create a session ID
-const getOrCreateSessionId = (): string => {
-  let sessionId = localStorage.getItem('chat_session_id');
-  if (!sessionId) {
-    sessionId = uuidv4();
-    localStorage.setItem('chat_session_id', sessionId);
-  }
+// Function to create a new session ID - always generates a new one
+const createNewSessionId = (): string => {
+  const sessionId = uuidv4();
+  // We don't store in localStorage anymore
   return sessionId;
 };
 
 export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
+  // Create a new session ID on every page load
+  const [sessionId, setSessionId] = useState<string>(createNewSessionId());
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [sessionId, setSessionId] = useState<string>(getOrCreateSessionId());
   const { user } = useAuth();
 
   // Function to reset session
   const resetSession = () => {
     const newSessionId = uuidv4();
-    localStorage.setItem('chat_session_id', newSessionId);
     setSessionId(newSessionId);
     setMessages([]);
   };
