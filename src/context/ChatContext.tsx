@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { generateGeminiResponse } from '@/lib/gemini';
@@ -20,6 +19,18 @@ type ChatContextType = {
   clearChat: () => void;
   sessionId: string;
   resetSession: () => void;
+};
+
+// Define the RealtimePayload type to resolve the TypeScript error
+type RealtimePayload = {
+  eventType: string;
+  new: {
+    id: string;
+    content: string;
+    role: 'user' | 'assistant';
+    created_at: string;
+    session_id: string;
+  };
 };
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -97,7 +108,7 @@ export const ChatProvider = ({ children }: { children: React.ReactNode }) => {
           table: 'messages',
           filter: `session_id=eq.${sessionId}`
         },
-        (payload: any) => {
+        (payload: RealtimePayload) => {
           console.log('Realtime update received:', payload);
           if (payload.eventType === 'INSERT') {
             const newMessage = payload.new;
